@@ -2,49 +2,96 @@
 
 import requests
 import json
+import itertools
+import datetime
 from pprint import pprint
 from urllib.parse import urljoin
 from akamai.edgegrid import EdgeGridAuth
+
+currentYear = datetime.datetime.now().year
+currentMonth = datetime.datetime.now().month
+marketingProductIds = list()
 
 # Get Credetials
 with open('akamai_credentials.json') as credentials_file:
     credentials=json.load(credentials_file)
 
-apiUrl = "https://" + credentials['api_url']
+# Variables for akamai operations
+apiUrl = credentials['akamai_credentials']['api_url']
+apiClientToken = credentials['akamai_credentials']['client_token']
+apiClientSecret = credentials['akamai_credentials']['client_secret']
+apiAccessToken = credentials['akamai_credentials']['access_token']
 
+# Opening Akamai http session
 apiSession = requests.Session()
-apiSession.auth = EdgeGridAuth(credentials['client_token'], credentials['client_secret'], credentials['access_token'])
+apiSession.auth = EdgeGridAuth(apiClientToken, apiClientSecret, apiAccessToken)
 
-reportingUrl= apiUrl + "/contract-api/v1/reportingGroups/identifiers"
-print(reportingUrl)
-reportingGroupIds = apiSession.get(reportingUrl)
+# Get all Reporting Group Ids
+urlReportingGroupId = apiUrl
+urlReportingGroupId += "/contract-api/v1/reportingGroups/identifiers"
 
-pprint(reportingGroupIds)
-
-#pprint(apiSession.get(urljoin(credentials['api_url'], "/diagnostic-tools/v1/locations")))
-
-#reporting_groupids={"rtl":72076}
-res_contract_ids = apiSession.get(urljoin(apiUrl, '/contract-api/v1/contracts/identifiers'))
-pprint(res_contract_ids.json())
-#res_product_ids = session.get(urljoin(api_url, '/contract-api/v1/reportingGroups/' + str(reporting_groupids['rtl']) + '/products/summaries'))
-#res_reporting_group_ids = session.get(urljoin(api_url, '/contract-api/v1/reportingGroups/identifiers'))
-#res_reporting_group_id = session.get()
+reportingGroupIds = apiSession.get(urlReportingGroupId).json()
 
 
+#usageDataFilter = {
+#        "statisticTypes": [
+#            "Total MB",
+#            ],
+#        "month": currentMonth,
+#        "year": currentYear,
+#        "productIds": reportingGroupIds[0]
+#        }
+usageDataFilter ={
+    "statisticTypes": [
+        "Total MB"
+    ],
+    "contractIds": [
+        "3-O5GPDD"
+    ],
+    "month": 7,
+    "year": 2017,
+    "reportingGroupIds": [
+        121692,
+        121693,
+        121694
+    ]
+}
 
+print(usageDataFilter)
+usageDataUrl = apiUrl + "/billing-center-api/v2/measures/find"
+usageDataRes = apiSession.post(usageDataUrl, data=usageDataFilter)
+pprint(usageDataRes.json())
 
-
-#count=0
-#for product_id in product_ids:
-#    path_url = '/billing-center-api/v2/reporting-groups/'
-#    path_url += str(reporting_groupids['rtl'])
-#    path_url += '/products/'
-#    path_url += str(product_id)
-#    path_url += '/measures?year=2017&month=5'
-#    pprint(path_url)
-#    count+=1
-#    usage_reporting_group = session.get(urljoin(api_url, path_url)).json()
-#    pprint(usage_reporting_group)
+# Gather all products per reporting group
+#for reportingGroupId in reportingGroupIds:
+#    urlProductsPerReportingGroup = apiUrl
+#    urlProductsPerReportingGroup += "/contract-api/v1/reportingGroups/"
+#    urlProductsPerReportingGroup += str(reportingGroupId)
+#    urlProductsPerReportingGroup += "/products/summaries"
 #
-#print(count)
-
+#    # Delete following if when it goes productive
+#    if reportingGroupId == 72077:
+#        productsPerReportingGroup = apiSession.get(urlProductsPerReportingGroup).json()
+#        pprint(productsPerReportingGroup)
+#        # Getting status_code of request,
+#        # if status_code is 300 there are more contracts
+#        # associated with ReportingGroup
+#        statusCodeProductsPerReportingGroup = apiSession.get(urlProductsPerReportingGroup).status_code
+#
+#        if statusCodeProductsPerReportingGroup == 200:
+#            for marketingProduct in productsPerReportingGroup['products']['marketing-products']:
+#                urlUsagePerReportingGroup = apiUrl
+#                urlUsagePerReportingGroup += "/billing-center-api/v2/reporting-groups/{}/products/{}/measures"
+#                urlUsagePerReportingGroup += "?year={}&month={}&statisticName=Total%20MB"
+#                urlUsagePerReportingGroup = urlUsagePerReportingGroup.format(reportingGroupId,
+#                                            marketingProduct['marketingProductId'], currentYear, currentMonth)
+#
+#                #usagePerReportingGroup = apiSession.get(urlUsagePerReportingGroup).json()
+#                #print("Marketing Productname: " + marketingProduct['marketingProductName'])
+#                #print("Marketing Product Id: " + marketingProduct['marketingProductId'])
+#                #print("Usage per Product and Reporting Group")
+#                #pprint(usagePerReportingGroup)
+#        elif statusCodeProductsPerReportingGroup == 300:
+#            for productsPerContract in productsPerReportingGroup['contracts']:
+#                productsPerReportingGroup = apiSession.get(apiUrl + productsPerContract['href'])
+#
