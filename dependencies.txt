@@ -1,3 +1,4 @@
 LIB:
 requests
 edgegrid-python
+pymysql
