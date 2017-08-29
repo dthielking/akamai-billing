@@ -2,96 +2,128 @@
 
 import requests
 import json
-import itertools
 import datetime
+import pymysql
+import sys
 from pprint import pprint
-from urllib.parse import urljoin
 from akamai.edgegrid import EdgeGridAuth
 
 currentYear = datetime.datetime.now().year
 currentMonth = datetime.datetime.now().month
 marketingProductIds = list()
-
 # Get Credetials
-with open('akamai_credentials.json') as credentials_file:
-    credentials=json.load(credentials_file)
+with open('akamai_config.json') as config_file:
+    config=json.load(config_file)
 
 # Variables for akamai operations
-apiUrl = credentials['akamai_credentials']['api_url']
-apiClientToken = credentials['akamai_credentials']['client_token']
-apiClientSecret = credentials['akamai_credentials']['client_secret']
-apiAccessToken = credentials['akamai_credentials']['access_token']
+apiUrl = config['akamai_credentials']['api_url']
+apiClientToken = config['akamai_credentials']['client_token']
+apiClientSecret = config['akamai_credentials']['client_secret']
+apiAccessToken = config['akamai_credentials']['access_token']
 
+# Variables for db instance
+rdsHost = config['aws_rds_credentials']['rds_endpoint_url']
+rdsPort = config['aws_rds_credentials']['rds_endpoint_port']
+rdsDb = config['aws_rds_credentials']['rds_db']
+rdsUser = config['aws_rds_credentials']['rds_username']
+rdsPass = config['aws_rds_credentials']['rds_password']
 # Opening Akamai http session
 apiSession = requests.Session()
 apiSession.auth = EdgeGridAuth(apiClientToken, apiClientSecret, apiAccessToken)
+try:
+    # Opening MySQL database connection
+    mycon = pymysql.connect(host=rdsHost,
+                            port=rdsPort,
+                            db=rdsDb,
+                            user=rdsUser,
+                            password=rdsPass)
+except:
+    print(sys.exc_info())
+
+# Get all Contracts
+urlContracts = apiUrl
+urlContracts += "/contract-api/v1/contracts/identifiers"
+
+resContracts = apiSession.get(urlContracts).json()
+
+# Insert Contracts into DB
+try:
+    with mycon.cursor() as cursor:
+        selectRes = list()
+
+        sqlSelect = "SELECT ContractId FROM tbl_Contracts"
+        cursor.execute(sqlSelect)
+
+        for row in cursor:
+            selectRes += row
+
+        for contract in resContracts:
+            if contract not in selectRes:
+                sql = "INSERT INTO tbl_Contracts(ContractId) VALUES(%s)"
+                cursor.execute(sql, contract)
+
+        mycon.commit()
+        cursor.close()
+except:
+    print(sys.exc_info())
 
 # Get all Reporting Group Ids
 urlReportingGroupId = apiUrl
 urlReportingGroupId += "/contract-api/v1/reportingGroups/identifiers"
 
-reportingGroupIds = apiSession.get(urlReportingGroupId).json()
+resReportingGroupIds = apiSession.get(urlReportingGroupId).json()
 
+try:
+    with mycon.cursor() as cursor:
+        selectRes = list()
 
-#usageDataFilter = {
-#        "statisticTypes": [
-#            "Total MB",
-#            ],
-#        "month": currentMonth,
-#        "year": currentYear,
-#        "productIds": reportingGroupIds[0]
-#        }
-usageDataFilter ={
-    "statisticTypes": [
-        "Total MB"
-    ],
-    "contractIds": [
-        "3-O5GPDD"
-    ],
-    "month": 7,
-    "year": 2017,
-    "reportingGroupIds": [
-        121692,
-        121693,
-        121694
-    ]
-}
+        sqlSelect = "SELECT ReportingGroupId FROM tbl_ReportingGroups"
+        cursor.execute(sqlSelect)
 
-print(usageDataFilter)
-usageDataUrl = apiUrl + "/billing-center-api/v2/measures/find"
-usageDataRes = apiSession.post(usageDataUrl, data=usageDataFilter)
-pprint(usageDataRes.json())
+        for row in cursor:
+            selectRes += row
 
-# Gather all products per reporting group
-#for reportingGroupId in reportingGroupIds:
-#    urlProductsPerReportingGroup = apiUrl
-#    urlProductsPerReportingGroup += "/contract-api/v1/reportingGroups/"
-#    urlProductsPerReportingGroup += str(reportingGroupId)
-#    urlProductsPerReportingGroup += "/products/summaries"
-#
-#    # Delete following if when it goes productive
-#    if reportingGroupId == 72077:
-#        productsPerReportingGroup = apiSession.get(urlProductsPerReportingGroup).json()
-#        pprint(productsPerReportingGroup)
-#        # Getting status_code of request,
-#        # if status_code is 300 there are more contracts
-#        # associated with ReportingGroup
-#        statusCodeProductsPerReportingGroup = apiSession.get(urlProductsPerReportingGroup).status_code
-#
-#        if statusCodeProductsPerReportingGroup == 200:
-#            for marketingProduct in productsPerReportingGroup['products']['marketing-products']:
-#                urlUsagePerReportingGroup = apiUrl
-#                urlUsagePerReportingGroup += "/billing-center-api/v2/reporting-groups/{}/products/{}/measures"
-#                urlUsagePerReportingGroup += "?year={}&month={}&statisticName=Total%20MB"
-#                urlUsagePerReportingGroup = urlUsagePerReportingGroup.format(reportingGroupId,
-#                                            marketingProduct['marketingProductId'], currentYear, currentMonth)
-#
-#                #usagePerReportingGroup = apiSession.get(urlUsagePerReportingGroup).json()
-#                #print("Marketing Productname: " + marketingProduct['marketingProductName'])
-#                #print("Marketing Product Id: " + marketingProduct['marketingProductId'])
-#                #print("Usage per Product and Reporting Group")
-#                #pprint(usagePerReportingGroup)
-#        elif statusCodeProductsPerReportingGroup == 300:
-#            for productsPerContract in productsPerReportingGroup['contracts']:
-#                productsPerReportingGroup = apiSession.get(apiUrl + productsPerContract['href'])
-#
+        for reportingGroupId in resReportingGroupIds:
+            if reportingGroupId not in selectRes:
+                sql = "INSERT INTO tbl_ReportingGroups(ReportingGroupId) VALUES (%s)"
+                cursor.execute(sql, reportingGroupId)
+
+        mycon.commit()
+        cursor.close()
+except:
+    print(sys.exc_info())
+
+# Get All Products
+listOfProducts = list()
+for contract in resContracts:
+    urlProducts = apiUrl
+    urlProducts += "/contract-api/v1/contracts/"
+    urlProducts += str(contract)
+    urlProducts += "/products/summaries"
+    resProducts = apiSession.get(urlProducts).json()
+
+    listOfProducts += resProducts['products']['marketing-products']
+
+try:
+    with mycon.cursor() as cursor:
+        dbProducts = list()
+
+        cursor.execute("SELECT ProductId FROM tbl_Products")
+        for row in cursor:
+             dbProducts += row
+
+        for product in listOfProducts:
+            if product['marketingProductId'] not in dbProducts:
+                insertProduct = 'INSERT INTO tbl_Products (ProductId, ProductName) '
+                insertProduct += 'VALUES(%(marketingProductId)s, %(marketingProductName)s)'
+                cursor.execute(insertProduct, product)
+
+        mycon.commit()
+        cursor.close()
+except:
+    print(sys.exc_info())
+
+try:
+    mycon.close()
+except:
+    print(sys.exc_info())
