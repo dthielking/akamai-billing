@@ -123,6 +123,37 @@ try:
 except:
     print(sys.exc_info())
 
+# Make ReportingGroup association with Contracts
+for reportingGroupId in resReportingGroupIds:
+    urlReportingGroupId = apiUrl
+    urlReportingGroupId += "/contract-api/v1/reportingGroups/"
+    urlReportingGroupId += str(reportingGroupId)
+    urlReportingGroupId += "/products/summaries"
+    resReportingGroupIds = apiSession.get(urlReportingGroupId)
+
+    contractIds = list()
+    if resReportingGroupIds.status_code == 200:
+        contractIds.append(resReportingGroupIds.json()['products']['contractId'])
+    elif resReportingGroupIds.status_code == 300:
+        for ids in resReportingGroupIds.json()['contracts']:
+            contractIds.append(ids['id'])
+
+    try:
+        with mycon.cursor() as cursor:
+            dictSql = {}
+            for contractId in contractIds:
+                dictSql['contractId'] = contractId
+                dictSql['reportingGroupId'] = reportingGroupId
+
+                insertSql = 'INSERT INTO ztbl_ReportingContract(FK_ContractsKey, FK_ReportingGroupKey)'
+                insertSql += 'VALUES((SELECT PK_ContractKey FROM tbl_Contracts WHERE ContractId = %(contractId)s),'
+                insertSql += '(SELECT PK_ReportingGroupKey FROM tbl_ReportingGroups WHERE ReportingGroupId = %(reportingGroupId)s))'
+                cursor.execute(insertSql, dictSql)
+        mycon.commit()
+        cursor.close()
+    except:
+        print(sys.exc_info())
+
 try:
     mycon.close()
 except:
