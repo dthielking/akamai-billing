@@ -1,160 +1,78 @@
 #!/usr/bin/env python3
-
-import requests
-import json
-import datetime
-import pymysql
-import sys
+""" blub """
 from pprint import pprint
-from akamai.edgegrid import EdgeGridAuth
+import AkamaiCbc
+import requests
 
-currentYear = datetime.datetime.now().year
-currentMonth = datetime.datetime.now().month
-marketingProductIds = list()
-# Get Credetials
-with open('akamai_config.json') as config_file:
-    config=json.load(config_file)
+def main():
+    """ Main function """
+    ab = AkamaiCbc.AkamaiBilling('./akamai_config.json')
+    contract_uri = "/contract-api/v1/contracts/identifiers"
+    rep_grps_uri = "/contract-api/v1/reportingGroups/identifiers"
+    product_lst = list()
 
-# Variables for akamai operations
-apiUrl = config['akamai_credentials']['api_url']
-apiClientToken = config['akamai_credentials']['client_token']
-apiClientSecret = config['akamai_credentials']['client_secret']
-apiAccessToken = config['akamai_credentials']['access_token']
+    # Make API Calls to get contracts ids
+    contract_ids = ab.make_api_call(contract_uri)
+    # Make API Call to get reporting groups ids
+    rep_grp_ids = ab.make_api_call(rep_grps_uri)
 
-# Variables for db instance
-rdsHost = config['aws_rds_credentials']['rds_endpoint_url']
-rdsPort = config['aws_rds_credentials']['rds_endpoint_port']
-rdsDb = config['aws_rds_credentials']['rds_db']
-rdsUser = config['aws_rds_credentials']['rds_username']
-rdsPass = config['aws_rds_credentials']['rds_password']
-# Opening Akamai http session
-apiSession = requests.Session()
-apiSession.auth = EdgeGridAuth(apiClientToken, apiClientSecret, apiAccessToken)
-try:
-    # Opening MySQL database connection
-    mycon = pymysql.connect(host=rdsHost,
-                            port=rdsPort,
-                            db=rdsDb,
-                            user=rdsUser,
-                            password=rdsPass)
-except:
-    print(sys.exc_info())
+    # Generate list of products uri
+    for contract_id in contract_ids:
+        products_uri = "/contract-api/v1/contracts/"
+        products_uri += str(contract_id)
+        products_uri += "/products/summaries"
+        for product in ab.make_api_call(products_uri)['products']['marketing-products']:
+            product_lst.append(product)
 
-# Get all Contracts
-urlContracts = apiUrl
-urlContracts += "/contract-api/v1/contracts/identifiers"
+    # Insert Contracts to DB without duplicates
+    sql_insert = "INSERT INTO tbl_contracts (ContractId) VALUES (%s)"
+    sql_select_dup_ids = "SELECT ContractId FROM tbl_contracts"
+    ab.sql_statement(sql_insert, contract_ids, sql_select_dup_ids)
 
-resContracts = apiSession.get(urlContracts).json()
+    # Insert reporting groups to DB without duplicates
+    sql_insert = "INSERT INTO tbl_reportinggroups (ReportingGroupId) VALUES (%s)"
+    sql_select_dup_ids = "SELECT ReportingGroupId FROM tbl_reportinggroups"
+    ab.sql_statement(sql_insert, rep_grp_ids, sql_select_dup_ids)
 
-# Insert Contracts into DB
-try:
-    with mycon.cursor() as cursor:
-        selectRes = list()
+    # Insert products into db without duplicats
+    sql_insert = "INSERT INTO tbl_products (ProductId, ProductName) "
+    sql_insert += "VALUES (%(marketingProductId)s, %(marketingProductName)s)"
+    sql_select_dup_ids = "SELECT ProductId FROM tbl_products"
+    ab.sql_statement(
+        sql_insert, product_lst, sql_select_dup_ids, search_id='marketingProductId')
 
-        sqlSelect = "SELECT ContractId FROM tbl_Contracts"
-        cursor.execute(sqlSelect)
+    # Generating foreign key association between Contracts and ReportingGroups
+    #Generating ReportingGroup URLs
+    for rep_grp_id in rep_grp_ids:
+        contract_reporting = dict()
+        url_reporting_group_id = "/contract-api/v1/reportingGroups/"
+        url_reporting_group_id += str(rep_grp_id)
+        url_reporting_group_id += "/products/summaries"
+        resp_api_call = ab.make_api_call(url_reporting_group_id)
 
-        for row in cursor:
-            selectRes += row
+        if isinstance(resp_api_call, dict):
+            contract_reporting['contractId'] = resp_api_call['products']['contractId']
+            contract_reporting['reportingGroupId'] = rep_grp_id
 
-        for contract in resContracts:
-            if contract not in selectRes:
-                sql = "INSERT INTO tbl_Contracts(ContractId) VALUES(%s)"
-                cursor.execute(sql, contract)
+            sql_select = "SELECT PK_ContractKey FROM tbl_Contracts "
+            sql_select += "WHERE ContractId = %s"
+            sql_ret = ab.sql_statement(sql_select, contract_reporting['contractId'])
+            pprint(sql_ret)
+            # for row in sql_ret:
+            #     result += row
+            # if len(result) > 1:
+            #     raise SystemExit
+            # contract_id = sql_ret.fetchone()
+            # print(contract_id)
 
-        mycon.commit()
-        cursor.close()
-except:
-    print(sys.exc_info())
+            # sql_insert = 'INSERT IGNORE INTO '
+            # sql_insert += 'ztbl_ReportingContract(FK_ContractsKey, FK_ReportingGroupKey)'
+            # sql_insert += 'VALUES((SELECT PK_ContractKey FROM tbl_Contracts '
+            # sql_insert += 'WHERE ContractId = %(contractId)s),'
+            # sql_insert += '(SELECT PK_ReportingGroupKey FROM tbl_ReportingGroups '
+            # sql_insert += 'WHERE ReportingGroupId = %(reportingGroupId)s))'
+            # ab.sql_statement(sql_insert, contract_reporting)
 
-# Get all Reporting Group Ids
-urlReportingGroupId = apiUrl
-urlReportingGroupId += "/contract-api/v1/reportingGroups/identifiers"
-
-resReportingGroupIds = apiSession.get(urlReportingGroupId).json()
-
-try:
-    with mycon.cursor() as cursor:
-        selectRes = list()
-
-        sqlSelect = "SELECT ReportingGroupId FROM tbl_ReportingGroups"
-        cursor.execute(sqlSelect)
-
-        for row in cursor:
-            selectRes += row
-
-        for reportingGroupId in resReportingGroupIds:
-            if reportingGroupId not in selectRes:
-                sql = "INSERT INTO tbl_ReportingGroups(ReportingGroupId) VALUES (%s)"
-                cursor.execute(sql, reportingGroupId)
-
-        mycon.commit()
-        cursor.close()
-except:
-    print(sys.exc_info())
-
-# Get All Products
-listOfProducts = list()
-for contract in resContracts:
-    urlProducts = apiUrl
-    urlProducts += "/contract-api/v1/contracts/"
-    urlProducts += str(contract)
-    urlProducts += "/products/summaries"
-    resProducts = apiSession.get(urlProducts).json()
-
-    listOfProducts += resProducts['products']['marketing-products']
-
-try:
-    with mycon.cursor() as cursor:
-        dbProducts = list()
-
-        cursor.execute("SELECT ProductId FROM tbl_Products")
-        for row in cursor:
-             dbProducts += row
-
-        for product in listOfProducts:
-            if product['marketingProductId'] not in dbProducts:
-                insertProduct = 'INSERT INTO tbl_Products (ProductId, ProductName) '
-                insertProduct += 'VALUES(%(marketingProductId)s, %(marketingProductName)s)'
-                cursor.execute(insertProduct, product)
-
-        mycon.commit()
-        cursor.close()
-except:
-    print(sys.exc_info())
-
-# Make ReportingGroup association with Contracts
-for reportingGroupId in resReportingGroupIds:
-    urlReportingGroupId = apiUrl
-    urlReportingGroupId += "/contract-api/v1/reportingGroups/"
-    urlReportingGroupId += str(reportingGroupId)
-    urlReportingGroupId += "/products/summaries"
-    resReportingGroupIds = apiSession.get(urlReportingGroupId)
-
-    contractIds = list()
-    if resReportingGroupIds.status_code == 200:
-        contractIds.append(resReportingGroupIds.json()['products']['contractId'])
-    elif resReportingGroupIds.status_code == 300:
-        for ids in resReportingGroupIds.json()['contracts']:
-            contractIds.append(ids['id'])
-
-    try:
-        with mycon.cursor() as cursor:
-            dictSql = {}
-            for contractId in contractIds:
-                dictSql['contractId'] = contractId
-                dictSql['reportingGroupId'] = reportingGroupId
-
-                insertSql = 'INSERT INTO ztbl_ReportingContract(FK_ContractsKey, FK_ReportingGroupKey)'
-                insertSql += 'VALUES((SELECT PK_ContractKey FROM tbl_Contracts WHERE ContractId = %(contractId)s),'
-                insertSql += '(SELECT PK_ReportingGroupKey FROM tbl_ReportingGroups WHERE ReportingGroupId = %(reportingGroupId)s))'
-                cursor.execute(insertSql, dictSql)
-        mycon.commit()
-        cursor.close()
-    except:
-        print(sys.exc_info())
-
-try:
-    mycon.close()
-except:
-    print(sys.exc_info())
+if __name__ == "__main__":
+    # Call main()
+    main()
