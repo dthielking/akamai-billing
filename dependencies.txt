@@ -1,4 +1,5 @@
 LIB:
 requests
+grequests
 edgegrid-python
 pymysql
