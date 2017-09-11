@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 06, 2017 at 09:38 AM
+-- Generation Time: Sep 06, 2017 at 05:28 PM
 -- Server version: 10.1.26-MariaDB
 -- PHP Version: 7.1.8
 
@@ -30,7 +30,7 @@ SET time_zone = "+00:00";
 
 DROP TABLE IF EXISTS `tbl_contracts`;
 CREATE TABLE IF NOT EXISTS `tbl_contracts` (
-  `ContractId` varchar(10) NOT NULL,
+  `ContractId` varchar(15) NOT NULL,
   PRIMARY KEY (`ContractId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS `tbl_products` (
 
 DROP TABLE IF EXISTS `tbl_reportinggroups`;
 CREATE TABLE IF NOT EXISTS `tbl_reportinggroups` (
-  `ReportingGroupId` int(11) NOT NULL,
+  `ReportingGroupId` varchar(15) NOT NULL,
   `ReportingGroupName` text,
   PRIMARY KEY (`ReportingGroupId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
@@ -68,18 +68,14 @@ CREATE TABLE IF NOT EXISTS `tbl_reportinggroups` (
 
 DROP TABLE IF EXISTS `tbl_reportinggroupstatistics`;
 CREATE TABLE IF NOT EXISTS `tbl_reportinggroupstatistics` (
-  `PK_ReportingGroupStatistics` int(11) NOT NULL AUTO_INCREMENT,
-  `Value` int(11) NOT NULL,
+  `Value` bigint(20) UNSIGNED NOT NULL,
   `Date` date NOT NULL,
   `Final` tinyint(1) NOT NULL,
-  `FK_ProductsKey` int(11) NOT NULL,
-  `FK_ReportingGroupKey` int(11) NOT NULL,
+  `ProductsId` varchar(15) NOT NULL,
+  `ReportingGroupId` varchar(15) NOT NULL,
   `Unit` text NOT NULL,
   `StatisticType` varchar(20) NOT NULL,
-  PRIMARY KEY (`PK_ReportingGroupStatistics`),
-  KEY `PK_ReportingGroupStatistics` (`PK_ReportingGroupStatistics`,`FK_ProductsKey`,`FK_ReportingGroupKey`),
-  KEY `FK_ProductsKey` (`FK_ProductsKey`),
-  KEY `FK_ReportingGroupKey` (`FK_ReportingGroupKey`)
+  PRIMARY KEY (`Date`,`ProductsId`,`ReportingGroupId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
@@ -90,11 +86,9 @@ CREATE TABLE IF NOT EXISTS `tbl_reportinggroupstatistics` (
 
 DROP TABLE IF EXISTS `ztbl_reportingcontract`;
 CREATE TABLE IF NOT EXISTS `ztbl_reportingcontract` (
-  `FK_ReportingGroupKey` int(11) NOT NULL,
-  `FK_ContractsKey` int(11) NOT NULL,
-  PRIMARY KEY (`FK_ReportingGroupKey`,`FK_ContractsKey`),
-  KEY `FK_ReportingGroupKey` (`FK_ReportingGroupKey`),
-  KEY `FK_ContractsKey` (`FK_ContractsKey`)
+  `ReportingGroupKey` varchar(15) NOT NULL,
+  `ContractsKey` varchar(15) NOT NULL,
+  PRIMARY KEY (`ReportingGroupKey`,`ContractsKey`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
@@ -105,11 +99,9 @@ CREATE TABLE IF NOT EXISTS `ztbl_reportingcontract` (
 
 DROP TABLE IF EXISTS `ztbl_reportingproduct`;
 CREATE TABLE IF NOT EXISTS `ztbl_reportingproduct` (
-  `FK_ProductsKey` int(11) NOT NULL,
-  `FK_ReportingGroupKey` int(11) NOT NULL,
-  PRIMARY KEY (`FK_ProductsKey`,`FK_ReportingGroupKey`),
-  KEY `FK_ProductsKey` (`FK_ProductsKey`),
-  KEY `FK_ReportingGroupKey` (`FK_ReportingGroupKey`)
+  `ProductsKey` varchar(15) NOT NULL,
+  `ReportingGroupKey` varchar(15) NOT NULL,
+  PRIMARY KEY (`ProductsKey`,`ReportingGroupKey`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 COMMIT;
 
