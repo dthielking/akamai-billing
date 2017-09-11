@@ -1,78 +1,250 @@
 #!/usr/bin/env python3
 """ blub """
-from pprint import pprint
-import AkamaiCbc
+import sys
+import json
+import datetime
 import requests
+import pymysql
+from akamai.edgegrid import EdgeGridAuth
+
+from pprint import pprint
 
 def main():
     """ Main function """
-    ab = AkamaiCbc.AkamaiBilling('./akamai_config.json')
-    contract_uri = "/contract-api/v1/contracts/identifiers"
-    rep_grps_uri = "/contract-api/v1/reportingGroups/identifiers"
-    product_lst = list()
+    # Load configuration file
+    try:
+        file = open('./akamai_config.json', 'r')
+        config = json.load(file)
+    except IOError as err:
+        print('I/O errno({}): {}'.format(err.errno, err.strerror))
+    except json.JSONDecodeError as jerr:
+        print('JSON errno({}): {}'.format(jerr.pos, jerr.msg))
+
+    # Authenticate against Akamai API
+    session = requests.session()
+    session.auth = EdgeGridAuth(
+        config['akamai']['client_token'],
+        config['akamai']['client_secret'],
+        config['akamai']['access_token']
+    )
+
+    # Open SQL Connection to database
+    try:
+        sql_con = pymysql.connect(
+            host=config['sql']['host'],
+            port=config['sql']['port'],
+            db=config['sql']['db'],
+            user=config['sql']['user'],
+            password=config['sql']['password']
+        )
+    except pymysql.DatabaseError as dberr:
+        print('DB errno({}): {}'.format(dberr.args[0], dberr.args[1]))
+
+    # Akamain API Url
+    api_url = config['akamai']['api_url']
 
     # Make API Calls to get contracts ids
-    contract_ids = ab.make_api_call(contract_uri)
-    # Make API Call to get reporting groups ids
-    rep_grp_ids = ab.make_api_call(rep_grps_uri)
-
-    # Generate list of products uri
-    for contract_id in contract_ids:
-        products_uri = "/contract-api/v1/contracts/"
-        products_uri += str(contract_id)
-        products_uri += "/products/summaries"
-        for product in ab.make_api_call(products_uri)['products']['marketing-products']:
-            product_lst.append(product)
+    resp_contr = session.get(api_url + '/contract-api/v1/contracts/identifiers?depth=TOP')
 
     # Insert Contracts to DB without duplicates
-    sql_insert = "INSERT INTO tbl_contracts (ContractId) VALUES (%s)"
-    sql_select_dup_ids = "SELECT ContractId FROM tbl_contracts"
-    ab.sql_statement(sql_insert, contract_ids, sql_select_dup_ids)
+    if resp_contr.status_code == 200:
+        try:
+            for contract_id in resp_contr.json():
+                sql_insert = 'INSERT INTO tbl_contracts(ContractId) VALUES("{0}") '
+                sql_insert += 'ON DUPLICATE KEY UPDATE ContractId = "{0}"'
+                sql_insert = sql_insert.format(contract_id)
 
-    # Insert reporting groups to DB without duplicates
-    sql_insert = "INSERT INTO tbl_reportinggroups (ReportingGroupId) VALUES (%s)"
-    sql_select_dup_ids = "SELECT ReportingGroupId FROM tbl_reportinggroups"
-    ab.sql_statement(sql_insert, rep_grp_ids, sql_select_dup_ids)
+                with sql_con.cursor() as cursor:
+                    cursor.execute(sql_insert)
+                    sql_con.commit()
 
-    # Insert products into db without duplicats
-    sql_insert = "INSERT INTO tbl_products (ProductId, ProductName) "
-    sql_insert += "VALUES (%(marketingProductId)s, %(marketingProductName)s)"
-    sql_select_dup_ids = "SELECT ProductId FROM tbl_products"
-    ab.sql_statement(
-        sql_insert, product_lst, sql_select_dup_ids, search_id='marketingProductId')
+        except pymysql.DatabaseError as dberr:
+            print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
+        finally:
+            cursor.close()
 
-    # Generating foreign key association between Contracts and ReportingGroups
-    #Generating ReportingGroup URLs
-    for rep_grp_id in rep_grp_ids:
-        contract_reporting = dict()
-        url_reporting_group_id = "/contract-api/v1/reportingGroups/"
-        url_reporting_group_id += str(rep_grp_id)
-        url_reporting_group_id += "/products/summaries"
-        resp_api_call = ab.make_api_call(url_reporting_group_id)
+        # Generate list of products uri
+        for contract_id in resp_contr.json():
+            product_uri = '/contract-api/v1/contracts/{}/products/summaries'.format(contract_id)
+            # Call API with products_uri
+            for product in session.get(api_url + product_uri).json()['products']['marketing-products']:
+                # Insert products into db without duplicates
+                try:
+                    sql_insert = 'INSERT INTO tbl_products(ProductId, ProductName) '
+                    sql_insert += 'VALUES (%(marketingProductId)s, %(marketingProductName)s) '
+                    sql_insert += 'ON DUPLICATE KEY UPDATE ProductId = %(marketingProductId)s'
 
-        if isinstance(resp_api_call, dict):
-            contract_reporting['contractId'] = resp_api_call['products']['contractId']
-            contract_reporting['reportingGroupId'] = rep_grp_id
+                    with sql_con.cursor() as cursor:
+                        cursor.execute(sql_insert, product)
+                        sql_con.commit()
 
-            sql_select = "SELECT PK_ContractKey FROM tbl_Contracts "
-            sql_select += "WHERE ContractId = %s"
-            sql_ret = ab.sql_statement(sql_select, contract_reporting['contractId'])
-            pprint(sql_ret)
-            # for row in sql_ret:
-            #     result += row
-            # if len(result) > 1:
-            #     raise SystemExit
-            # contract_id = sql_ret.fetchone()
-            # print(contract_id)
+                except pymysql.DatabaseError as dberr:
+                    print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
+                finally:
+                    cursor.close()
+    else:
+        sys.exit('Contract:HTTP Status not 200. HTTP status: {}'.format(resp_contr.status_code))
 
-            # sql_insert = 'INSERT IGNORE INTO '
-            # sql_insert += 'ztbl_ReportingContract(FK_ContractsKey, FK_ReportingGroupKey)'
-            # sql_insert += 'VALUES((SELECT PK_ContractKey FROM tbl_Contracts '
-            # sql_insert += 'WHERE ContractId = %(contractId)s),'
-            # sql_insert += '(SELECT PK_ReportingGroupKey FROM tbl_ReportingGroups '
-            # sql_insert += 'WHERE ReportingGroupId = %(reportingGroupId)s))'
-            # ab.sql_statement(sql_insert, contract_reporting)
+    # Make API Call to get reporting groups ids
+    res_repgrp = session.get(api_url + '/contract-api/v1/reportingGroups/identifiers')
 
-if __name__ == "__main__":
+    if res_repgrp.status_code == 200:
+        try:
+            for repgrp in res_repgrp.json():
+                # Insert Reporting Groups into DB
+                sql_insert = 'INSERT INTO tbl_reportinggroups (ReportingGroupId) VALUES ("{0}") '
+                sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupId = "{0}"'
+                sql_insert = sql_insert.format(repgrp)
+
+                with sql_con.cursor() as cursor:
+                    # Insert reporting groups to DB without duplicates
+                    cursor.execute(sql_insert)
+                    sql_con.commit()
+
+                # Generating ReportingGroup URLs to get Products per ReportingGroup
+                resp = session.get(api_url +
+                                   '/contract-api/v1/reportingGroups/{}/products/summaries'
+                                   .format(repgrp))
+
+                # Get current year and month for querying
+                current_year = datetime.datetime.now().year
+                current_month = datetime.datetime.now().month
+
+                if resp.status_code == 200:
+
+                    # Association between Reporting Group and Contract
+                    sql_insert = 'INSERT INTO ztbl_ReportingContract(ReportingGroupKey, ContractsKey) '
+                    sql_insert += 'Values(%(reportingGroupId)s, %(contractId)s) '
+                    sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupKey = '
+                    sql_insert += '%(reportingGroupId)s, ContractsKey = %(contractId)s'
+
+                    sql_data = dict()
+                    sql_data['reportingGroupId'] = repgrp
+                    sql_data['contractId'] = resp.json()['products']['contractId']
+
+                    with sql_con.cursor() as cursor:
+                        cursor.execute(sql_insert, sql_data)
+                        sql_con.commit()
+
+                    # Association between Reporting Group and Product
+                    for product in resp.json()['products']['marketing-products']:
+                        reporting_product = {'reportingGroupId': repgrp,
+                                              'productId': product['marketingProductId']}
+
+                        sql_insert = 'INSERT INTO ztbl_ReportingProduct(ProductsKey, ReportingGroupKey) '
+                        sql_insert += 'Values(%(productId)s, %(reportingGroupId)s) '
+                        sql_insert += 'ON DUPLICATE KEY UPDATE ProductsKey = %(productId)s, '
+                        sql_insert += 'ReportingGroupKey = %(reportingGroupId)s'
+
+                        with sql_con.cursor() as cursor:
+                            cursor.execute(sql_insert, reporting_product)
+                            sql_con.commit()
+
+                        # Get statistics from API and write them into DB
+                        query = '?fromYear={}&fromMonth={}&toYear={}&toMonth={}'
+                        query = query.format(current_year, current_month-1, current_year, current_month)
+                        url = '/billing-center-api/v2/reporting-groups/{}/products/{}/measures{}'
+                        url = url.format(repgrp, reporting_product['productId'], query)
+        
+                        response_stats = session.get(api_url + url)
+                        for response_stat in response_stats.json():
+                            if response_stat:
+                                insert_data = dict()
+                                insert_data['value'] = response_stat['value']
+                                insert_data['date'] = response_stat['date']
+                                insert_data['final'] = response_stat['final']
+                                insert_data['unit'] = response_stat['statistic']['unit']
+                                insert_data['statistictype'] = response_stat['statistic']['name']
+                                insert_data['productsid'] = reporting_product['productId']
+                                insert_data['reportinggroupid'] = repgrp
+
+                                sql_insert = 'INSERT INTO tbl_ReportingGroupStatistics('
+                                sql_insert += 'Value, Date, Final, Productsid, '
+                                sql_insert += 'ReportingGroupId, Unit, StatisticType) '
+                                sql_insert += 'VALUES(%(value)s, %(date)s, %(final)s, %(productsid)s, '
+                                sql_insert += '%(reportinggroupid)s, %(unit)s, %(statistictype)s)'
+                                sql_insert += 'ON DUPLICATE KEY UPDATE Value= %(value)s'
+
+                                with sql_con.cursor() as cursor:
+                                    cursor.execute(sql_insert, insert_data)
+                                    sql_con.commit()
+
+                elif resp.status_code == 300:
+                    for contract_link in resp.json()['contracts']:
+                        # Dirty ugly hack to call API when multiple Contracts
+                        # are associated to ReportingGroups
+                        # If Akamai fixes the href we can remove .replace()
+                        response = session.get(api_url + contract_link['href'].replace(
+                            'v1.0', 'v1'
+                        ))
+
+                        sql_insert = 'INSERT INTO ztbl_ReportingContract(ReportingGroupKey, ContractsKey) '
+                        sql_insert += 'Values(%(reportingGroupId)s, %(contractId)s) '
+                        sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupKey = '
+                        sql_insert += '%(reportingGroupId)s, ContractsKey = %(contractId)s'
+                        sql_data = dict()
+                        sql_data['reportingGroupId'] = repgrp
+                        sql_data['contractId'] = response.json()['products']['contractId']
+
+                        with sql_con.cursor() as cursor:
+                            cursor.execute(sql_insert, sql_data)
+                            sql_con.commit()
+
+                        # Association between Reporting Group and Product
+                        for product in response.json()['products']['marketing-products']:
+
+                            reporting_product = {'reportingGroupId': repgrp,
+                                                 'productId': product['marketingProductId']}
+                            
+                            sql_insert = 'INSERT INTO ztbl_ReportingProduct(ProductsKey, ReportingGroupKey) '
+                            sql_insert += 'Values(%(productId)s, %(reportingGroupId)s) '
+                            sql_insert += 'ON DUPLICATE KEY UPDATE ProductsKey = %(productId)s, '
+                            sql_insert += 'ReportingGroupKey = %(reportingGroupId)s'
+
+                            with sql_con.cursor() as cursor:
+                                cursor.execute(sql_insert, reporting_product)
+                                sql_con.commit()
+
+                            # Get statistics from API and write them into DB
+                            query = '?fromYear={}&fromMonth={}&toYear={}&toMonth={}'
+                            query = query.format(current_year, current_month-1, current_year, current_month)
+                            url = '/billing-center-api/v2/reporting-groups/{}/products/{}/measures{}'
+                            url = url.format(repgrp, reporting_product['productId'], query)
+            
+                            response_stats = session.get(api_url + url)
+                            for response_stat in response_stats.json():
+                                if response_stat:
+                                    insert_data = dict()
+                                    insert_data['value'] = response_stat['value']
+                                    insert_data['date'] = response_stat['date']
+                                    insert_data['final'] = response_stat['final']
+                                    insert_data['unit'] = response_stat['statistic']['unit']
+                                    insert_data['statistictype'] = response_stat['statistic']['name']
+                                    insert_data['productsid'] = reporting_product['productId']
+                                    insert_data['reportinggroupid'] = repgrp
+
+                                    sql_insert = 'INSERT INTO tbl_ReportingGroupStatistics('
+                                    sql_insert += 'Value, Date, Final, Productsid, '
+                                    sql_insert += 'ReportingGroupId, Unit, StatisticType) '
+                                    sql_insert += 'VALUES(%(value)s, %(date)s, %(final)s, %(productsid)s, '
+                                    sql_insert += '%(reportinggroupid)s, %(unit)s, %(statistictype)s)'
+                                    sql_insert += 'ON DUPLICATE KEY UPDATE Value= %(value)s'
+
+                                    with sql_con.cursor() as cursor:
+                                        cursor.execute(sql_insert, insert_data)
+                                        sql_con.commit()
+
+        except pymysql.DatabaseError as dberr:
+            print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
+            print(sys.exc_info)
+        finally:
+            cursor.close()
+
+    try:
+        sql_con.close()
+    except pymysql.DatabaseError as dberr:
+        print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
+
+if __name__ == '__main__':
     # Call main()
     main()
