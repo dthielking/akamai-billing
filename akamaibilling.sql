@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 06, 2017 at 05:28 PM
+-- Generation Time: Sep 12, 2017 at 09:56 AM
 -- Server version: 10.1.26-MariaDB
 -- PHP Version: 7.1.8
 
@@ -21,6 +21,23 @@ SET time_zone = "+00:00";
 --
 -- Database: `akamaibilling`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `akamaistatistiken`
+-- (See below for the actual view)
+--
+DROP VIEW IF EXISTS `akamaistatistiken`;
+CREATE TABLE IF NOT EXISTS `akamaistatistiken` (
+`Datum` date
+,`Vertragsnummer` varchar(15)
+,`ReportingGroupId` varchar(15)
+,`Produkt` text
+,`Wert` double(17,2) unsigned
+,`Einheit` text
+,`StatistikTyp` varchar(20)
+);
 
 -- --------------------------------------------------------
 
@@ -68,14 +85,14 @@ CREATE TABLE IF NOT EXISTS `tbl_reportinggroups` (
 
 DROP TABLE IF EXISTS `tbl_reportinggroupstatistics`;
 CREATE TABLE IF NOT EXISTS `tbl_reportinggroupstatistics` (
-  `Value` bigint(20) UNSIGNED NOT NULL,
+  `Value` double(17,2) UNSIGNED NOT NULL,
   `Date` date NOT NULL,
   `Final` tinyint(1) NOT NULL,
   `ProductsId` varchar(15) NOT NULL,
   `ReportingGroupId` varchar(15) NOT NULL,
   `Unit` text NOT NULL,
   `StatisticType` varchar(20) NOT NULL,
-  PRIMARY KEY (`Date`,`ProductsId`,`ReportingGroupId`)
+  PRIMARY KEY (`Date`,`ProductsId`,`ReportingGroupId`,`StatisticType`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
@@ -103,6 +120,15 @@ CREATE TABLE IF NOT EXISTS `ztbl_reportingproduct` (
   `ReportingGroupKey` varchar(15) NOT NULL,
   PRIMARY KEY (`ProductsKey`,`ReportingGroupKey`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `akamaistatistiken`
+--
+DROP TABLE IF EXISTS `akamaistatistiken`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `akamaistatistiken`  AS  select `tbl_reportinggroupstatistics`.`Date` AS `Datum`,`ztbl_reportingcontract`.`ContractsKey` AS `Vertragsnummer`,`tbl_reportinggroupstatistics`.`ReportingGroupId` AS `ReportingGroupId`,`tbl_products`.`ProductName` AS `Produkt`,`tbl_reportinggroupstatistics`.`Value` AS `Wert`,`tbl_reportinggroupstatistics`.`Unit` AS `Einheit`,`tbl_reportinggroupstatistics`.`StatisticType` AS `StatistikTyp` from ((`tbl_reportinggroupstatistics` join `tbl_products`) join `ztbl_reportingcontract`) where ((`tbl_reportinggroupstatistics`.`ProductsId` = `tbl_products`.`ProductId`) and (`tbl_reportinggroupstatistics`.`ReportingGroupId` = `ztbl_reportingcontract`.`ReportingGroupKey`)) ;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
