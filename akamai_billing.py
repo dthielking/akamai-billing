@@ -10,7 +10,7 @@ import requests
 import pymysql
 from akamai.edgegrid import EdgeGridAuth
 
-def get_product_statitics(reporting_group_id, product_ids, requests_session, api_url, datetime_now=None):
+def get_product_statitics(reporting_group_id, product_id, requests_session, api_url, datetime_now=None):
     if not datetime_now:
         try:
             import datetime
@@ -25,17 +25,16 @@ def get_product_statitics(reporting_group_id, product_ids, requests_session, api
         current_year = datetime_now.year
         current_month = datetime_now.month
 
-    for product in product_ids:
-        # Get statistics from API and write them into DB
-        query = '?fromYear={}&fromMonth={}&toYear={}&toMonth={}'
-        query = query.format(current_year, current_month-1, current_year, current_month)
-        url = '/billing-center-api/v2/reporting-groups/{}/products/{}/measures{}'
-        url = url.format(reporting_group_id, product, query)
+    # Get statistics from API and write them into DB
+    query = '?fromYear={}&fromMonth={}&toYear={}&toMonth={}'
+    query = query.format(current_year, current_month-1, current_year, current_month)
+    url = '/billing-center-api/v2/reporting-groups/{}/products/{}/measures{}'
+    url = url.format(reporting_group_id, product_id, query)
 
-        response_stats = requests_session.get(api_url + url)
-        return response_stats
+    response = requests_session.get(api_url + url)
+    return response
 
-def assoc_repgrp_product(reporting_group_id, product_ids, sql_con):
+def assoc_repgrp_product(reporting_group_id, product_ids, sql_connection):
     """ Makes the association between ReportingGroups and Products """
 
     # Association between Reporting Group and Product
@@ -48,11 +47,11 @@ def assoc_repgrp_product(reporting_group_id, product_ids, sql_con):
         sql_insert += 'ON DUPLICATE KEY UPDATE ProductsKey = %(productId)s, '
         sql_insert += 'ReportingGroupKey = %(reportingGroupId)s'
 
-        with sql_con.cursor() as cursor:
+        with sql_connection.cursor() as cursor:
             cursor.execute(sql_insert, reporting_product)
-            sql_con.commit()
+            sql_connection.commit()
 
-def assoc_repgrp_contract(reporting_group_id, contract_id, sql_con):
+def assoc_repgrp_contract(reporting_group_id, contract_id, sql_connection):
     """ Makes the association between ReportingGroups and Contracts """
     # Association between Reporting Group and Contract
     sql_insert = 'INSERT INTO ztbl_ReportingContract(ReportingGroupKey, ContractsKey) '
@@ -64,13 +63,12 @@ def assoc_repgrp_contract(reporting_group_id, contract_id, sql_con):
     sql_data['reportingGroupId'] = reporting_group_id
     sql_data['contractId'] = contract_id
 
-    with sql_con.cursor() as cursor:
+    with sql_connection.cursor() as cursor:
         cursor.execute(sql_insert, sql_data)
-        sql_con.commit()
+        sql_connection.commit()
 
-def insert_statistics_db(statistics, reporting_group_id, sql_connection):
+def insert_statistics_db(statistics, reporting_group_id, product_id, sql_connection):
     """ Writes list of statistics into database """
-
     for statistic in statistics:
         if statistic:
             insert_data = dict()
@@ -79,7 +77,7 @@ def insert_statistics_db(statistics, reporting_group_id, sql_connection):
             insert_data['final'] = statistic['final']
             insert_data['unit'] = statistic['statistic']['unit']
             insert_data['statistictype'] = statistic['statistic']['name']
-            insert_data['productsid'] = statistic['productId']
+            insert_data['productsid'] = product_id
             insert_data['reportinggroupid'] = reporting_group_id
 
             sql_insert = 'INSERT INTO tbl_ReportingGroupStatistics('
@@ -201,9 +199,10 @@ def main():
                     assoc_repgrp_contract(repgrp, resp.json()['products']['contractId'], sql_con)
                     assoc_repgrp_product(repgrp, resp.json()['products']['marketing-products'], sql_con)
 
-                    response_stats = get_product_statitics(repgrp, resp.json()['products']['marketing-products'], session, api_url, date)
-                    if response_stats.status_code == 200:
-                        insert_statistics_db(response_stats, repgrp, sql_con)
+                    for product in resp.json()['products']['marketing-products']:
+                            response_stats = get_product_statitics(repgrp, product['marketingProductId'], session, api_url, date)
+                            if response_stats.status_code == 200:
+                                insert_statistics_db(response_stats.json(), repgrp, product['marketingProductId'], sql_con)
 
                 elif resp.status_code == 300:
                     for contract_link in resp.json()['contracts']:
@@ -216,9 +215,10 @@ def main():
 
                         assoc_repgrp_contract(repgrp, response.json()['products']['contractId'], sql_con)
                         assoc_repgrp_product(repgrp, response.json()['products']['marketing-products'], sql_con)
-                        response_stats = get_product_statitics(repgrp, response.json()['products']['marketing-products'], session, api_url, date)
-                        if response_stats.status_code == 200:
-                            insert_statistics_db(response_stats, repgrp, sql_con)
+                        for product in response.json()['products']['marketing-products']:
+                            response_stats = get_product_statitics(repgrp, product['marketingProductId'], session, api_url, date)
+                            if response_stats.status_code == 200:
+                                insert_statistics_db(response_stats.json(), repgrp, product['marketingProductId'], sql_con)
 
         except pymysql.DatabaseError as dberr:
             print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
