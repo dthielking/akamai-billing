@@ -17,9 +17,10 @@ def get_product_statitics(reporting_group_id, product_ids, requests_session, api
             date = datetime.datetime.now()
             current_year = date.year
             current_month = date.month
-        except ImportError as im_err:
+        except ImportError:
             print("Module not loadable.")
             print(sys.exc_info())
+            sys.exit()
     else:
         current_year = datetime_now.year
         current_month = datetime_now.month
