@@ -10,7 +10,7 @@ import requests
 import pymysql
 from akamai.edgegrid import EdgeGridAuth
 
-def get_product_statitics(reporting_group_id, product_ids, requests_session, api_url, datetime_now = None):
+def get_product_statitics(reporting_group_id, product_ids, requests_session, api_url, datetime_now=None):
     if not datetime_now:
         try:
             import datetime
@@ -30,7 +30,7 @@ def get_product_statitics(reporting_group_id, product_ids, requests_session, api
         query = '?fromYear={}&fromMonth={}&toYear={}&toMonth={}'
         query = query.format(current_year, current_month-1, current_year, current_month)
         url = '/billing-center-api/v2/reporting-groups/{}/products/{}/measures{}'
-        url = url.format(reporting_group_id, product_ids, query)
+        url = url.format(reporting_group_id, product, query)
 
         response_stats = requests_session.get(api_url + url)
         return response_stats
