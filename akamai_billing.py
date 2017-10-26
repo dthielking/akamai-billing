@@ -6,9 +6,10 @@ billing api
 import sys
 import json
 import datetime
-import requests
-import pymysql
-from akamai.edgegrid import EdgeGridAuth
+import lib.requests as requests
+import lib.pymysql as pymysql
+from lib.akamai.edgegrid import EdgeGridAuth
+
 
 def get_product_statitics(reporting_group_id, product_id, requests_session, api_url, datetime_now=None):
     if not datetime_now:
@@ -34,6 +35,7 @@ def get_product_statitics(reporting_group_id, product_id, requests_session, api_
     response = requests_session.get(api_url + url)
     return response
 
+
 def assoc_repgrp_product(reporting_group_id, product_ids, sql_connection):
     """ Makes the association between ReportingGroups and Products """
 
@@ -51,6 +53,7 @@ def assoc_repgrp_product(reporting_group_id, product_ids, sql_connection):
             cursor.execute(sql_insert, reporting_product)
             sql_connection.commit()
 
+
 def assoc_repgrp_contract(reporting_group_id, contract_id, sql_connection):
     """ Makes the association between ReportingGroups and Contracts """
     # Association between Reporting Group and Contract
@@ -66,6 +69,7 @@ def assoc_repgrp_contract(reporting_group_id, contract_id, sql_connection):
     with sql_connection.cursor() as cursor:
         cursor.execute(sql_insert, sql_data)
         sql_connection.commit()
+
 
 def insert_statistics_db(statistics, reporting_group_id, product_id, sql_connection):
     """ Writes list of statistics into database """
@@ -141,7 +145,7 @@ def main():
             for contract_id in resp_contr.json():
                 sql_insert = 'INSERT INTO tbl_contracts(ContractId) VALUES(%s) '
                 sql_insert += 'ON DUPLICATE KEY UPDATE ContractId = %s'
- 
+
                 with sql_con.cursor() as cursor:
                     cursor.execute(sql_insert, (contract_id, contract_id))
                     sql_con.commit()

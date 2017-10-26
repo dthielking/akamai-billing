@@ -1,5 +1,6 @@
 *.swp
-akamai_credentials.json
 akamai_config.json
 .vscode
 __pycache__
+lib
+*.zip
