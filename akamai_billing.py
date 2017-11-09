@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-""" This Module gets statistics from
+"""
+This Module gets statistics from
 the akamai api espacially the contracts and
 billing api
  """
 import sys
 import json
 import datetime
-import lib.requests as requests
-import lib.pymysql as pymysql
-from lib.akamai.edgegrid import EdgeGridAuth
+import requests
+import pymysql
+from akamai.edgegrid import EdgeGridAuth
 
 
 def get_product_statitics(reporting_group_id, product_id, requests_session, api_url, datetime_now=None):
@@ -44,7 +45,7 @@ def assoc_repgrp_product(reporting_group_id, product_ids, sql_connection):
         reporting_product = {'reportingGroupId': reporting_group_id,
                              'productId': product['marketingProductId']}
 
-        sql_insert = 'INSERT INTO ztbl_ReportingProduct(ProductsKey, ReportingGroupKey) '
+        sql_insert = 'INSERT INTO ztbl_reportingproduct(ProductsKey, ReportingGroupKey) '
         sql_insert += 'Values(%(productId)s, %(reportingGroupId)s) '
         sql_insert += 'ON DUPLICATE KEY UPDATE ProductsKey = %(productId)s, '
         sql_insert += 'ReportingGroupKey = %(reportingGroupId)s'
@@ -57,7 +58,7 @@ def assoc_repgrp_product(reporting_group_id, product_ids, sql_connection):
 def assoc_repgrp_contract(reporting_group_id, contract_id, sql_connection):
     """ Makes the association between ReportingGroups and Contracts """
     # Association between Reporting Group and Contract
-    sql_insert = 'INSERT INTO ztbl_ReportingContract(ReportingGroupKey, ContractsKey) '
+    sql_insert = 'INSERT INTO ztbl_reportingcontract(ReportingGroupKey, ContractsKey) '
     sql_insert += 'Values(%(reportingGroupId)s, %(contractId)s) '
     sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupKey = '
     sql_insert += '%(reportingGroupId)s, ContractsKey = %(contractId)s'
@@ -84,7 +85,7 @@ def insert_statistics_db(statistics, reporting_group_id, product_id, sql_connect
             insert_data['productsid'] = product_id
             insert_data['reportinggroupid'] = reporting_group_id
 
-            sql_insert = 'INSERT INTO tbl_ReportingGroupStatistics('
+            sql_insert = 'INSERT INTO tbl_reportinggroupstatistics('
             sql_insert += 'Value, Date, Final, Productsid, '
             sql_insert += 'ReportingGroupId, Unit, StatisticType) '
             sql_insert += 'VALUES(%(value)s, %(date)s, %(final)s, %(productsid)s, '
