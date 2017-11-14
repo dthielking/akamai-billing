@@ -181,28 +181,29 @@ def main():
         sys.exit('Contract:HTTP Status not 200. HTTP status: {}'.format(resp_contr.status_code))
 
     # Make API Call to get reporting groups ids
-    res_repgrp = session.get(api_url + '/contract-api/v1/reportingGroups/identifiers')
+    res_repgrp = session.get(api_url + '/contract-api/v1/reportingGroups/')
 
     if res_repgrp.status_code == 200:
         try:
             for repgrp in res_repgrp.json():
                 # Insert Reporting Groups into DB
-                sql_insert = 'INSERT INTO tbl_reportinggroups (ReportingGroupId) VALUES (%s) '
-                sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupId = %s'
+                sql_insert = 'INSERT INTO tbl_reportinggroups (ReportingGroupId, ReportingGroupName) VALUES (%(id)s, %(name)s) '
+                sql_insert += 'ON DUPLICATE KEY UPDATE ReportingGroupId = %(id)s,'
+                sql_insert += 'ReportingGroupName = %(name)s'
 
                 with sql_con.cursor() as cursor:
                     # Insert reporting groups to DB without duplicates
-                    cursor.execute(sql_insert, (repgrp, repgrp))
+                    cursor.execute(sql_insert, repgrp)
                     sql_con.commit()
 
                 # Generating ReportingGroup URLs to get Products per ReportingGroup
                 resp = session.get(api_url +
                                    '/contract-api/v1/reportingGroups/{}/products/summaries'
-                                   .format(repgrp))
+                                   .format(repgrp['id']))
 
                 if resp.status_code == 200:
-                    assoc_repgrp_contract(repgrp, resp.json()['products']['contractId'], sql_con)
-                    assoc_repgrp_product(repgrp, resp.json()['products']['marketing-products'], sql_con)
+                    assoc_repgrp_contract(repgrp['id'], resp.json()['products']['contractId'], sql_con)
+                    assoc_repgrp_product(repgrp['id'], resp.json()['products']['marketing-products'], sql_con)
 
                     for product in resp.json()['products']['marketing-products']:
                             response_stats = get_product_statitics(repgrp, product['marketingProductId'], session, api_url, date)
@@ -218,12 +219,12 @@ def main():
                             'v1.0', 'v1'
                         ))
 
-                        assoc_repgrp_contract(repgrp, response.json()['products']['contractId'], sql_con)
-                        assoc_repgrp_product(repgrp, response.json()['products']['marketing-products'], sql_con)
+                        assoc_repgrp_contract(repgrp['id'], response.json()['products']['contractId'], sql_con)
+                        assoc_repgrp_product(repgrp['id'], response.json()['products']['marketing-products'], sql_con)
                         for product in response.json()['products']['marketing-products']:
-                            response_stats = get_product_statitics(repgrp, product['marketingProductId'], session, api_url, date)
+                            response_stats = get_product_statitics(repgrp['id'], product['marketingProductId'], session, api_url, date)
                             if response_stats.status_code == 200:
-                                insert_statistics_db(response_stats.json(), repgrp, product['marketingProductId'], sql_con)
+                                insert_statistics_db(response_stats.json(), repgrp['id'], product['marketingProductId'], sql_con)
 
         except pymysql.DatabaseError as dberr:
             print('Errno({0}): {1}'.format(dberr.args[0], dberr.args[1]))
