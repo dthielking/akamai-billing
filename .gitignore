@@ -1,6 +1,9 @@
+*.log
 *.swp
-akamai_config.json
+*.zip
 .vscode
 __pycache__
+configuration.json
 lib
-*.zip
+venv_*
+
