@@ -1,0 +1,37 @@
+version: '3'
+
+services:
+  akamaibilling:
+    image: cbc/clouds/akamaibilling_python:latest
+    build:
+      context: ./akamaibilling_python/
+      dockerfile: Dockerfile
+    container_name: akamaibilling
+    networks:
+      - akamaibilling_net
+    volumes:
+      - '//c//Users//Thielking//Documents//git//cbc//akamai-billing/akamaibilling_python:/app'
+    entrypoint: ''
+    command: 'sh'
+    stdin_open: true
+    tty: true
+
+  mysql:
+    image: cbc/clouds/akamaibilling_sql
+    build:
+      context: akamaibilling_sql/
+      dockerfile: Dockerfile
+    container_name: mysql
+    networks:
+      - akamaibilling_net
+    environment:
+      MYSQL_ROOT_PASSWORD: 'akamaibilling'
+      MYSQL_DATABASE: 'akamaibilling'
+      MYSQL_USER: 'akamaibilling'
+      MYSQL_PASSWORD: 'akamaibilling'
+    ports:
+      - '3306:3306'
+
+networks:
+  akamaibilling_net:
+    driver: bridge
