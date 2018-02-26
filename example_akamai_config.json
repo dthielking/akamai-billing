@@ -1,0 +1,15 @@
+{
+    "akamai": {
+        "client_secret": "CLIENT_SECRET FROM AKAMAI API",
+        "api_url": "https://AKAMI.API.URL",
+        "access_token": "ACCESS_TOKEN FROM AKAMAI API",
+        "client_token": "CLIENT_TOKEN FROM AKAMAI API"
+    },
+    "sql": {
+        "host": "DATABASEHOST",
+        "port": 3306,
+        "db": "DATABASENAME",
+        "user": "DATABASEUSER",
+        "password": "DATABASEPASSWORD"
+    }
+}
