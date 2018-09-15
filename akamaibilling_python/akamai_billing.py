@@ -5,11 +5,11 @@ billing api
 """
 
 import argparse
+import dataset
 import datetime
 import json
 import logging
 import os
-import pymysql
 import requests
 import sys
 from akamai.edgegrid import EdgeGridAuth
@@ -42,12 +42,7 @@ def add_argument_parser():
 
     # Adding database group to parser
     db_group = parser.add_argument_group(title='Database configuration parameters', description='This parameters are used to configure the database')
-    db_group.add_argument('--database-host', help='Database host endpoint')
-    db_group.add_argument('--database-port', help='Database port to connect to')
-    db_group.add_argument('--database', help='Database on Host')
-    db_group.add_argument('--database-user', help='Database user')
-    db_group.add_argument('--database-password', help='Database password.')
-
+    db_group.add_argument('--database-url', '-d', help='mysql://user:password@localhost/databasename')
     # Adding akamai group to parser
     akamai_group = parser.add_argument_group(
         title='Akamai configuration parameters',
@@ -224,7 +219,7 @@ def get_akamai_credentials(logger, cmd_args=None, akamai_api_config=None):
     return akamai_conf
 
 
-def get_database_creds(logger, cmd_args=None, database_config=None):
+def get_database_url(logger, cmd_args=None, database_config=None):
     """Returns database credentials
 
     This function returns database credentials either form environment variables,
@@ -244,56 +239,16 @@ def get_database_creds(logger, cmd_args=None, database_config=None):
         dictionary -- dictionary with database configuration arguments.
     """
 
-    database_conf = dict(
-        DATABASE_HOST='',
-        DATABASE_PORT='',
-        DATABASE_DB='',
-        DATABASE_USER='',
-        DATABASE_PASSWORD=''
-        )
-
     if database_config:
-        database_conf['DATABASE_HOST'] = database_config['database']['host']
-        database_conf['DATABASE_PORT'] = database_config['database']['port']
-        database_conf['DATABASE_DB'] = database_config['database']['db']
-        database_conf['DATABASE_USER'] = database_config['database']['user']
-        database_conf['DATABASE_PASSWORD'] = database_config['database']['password']
+        database_url = database_config['database_url']
 
-    if 'DATABASE_HOST' in os.environ:
-        database_conf['DATABASE_HOST'] = os.environ.get('DATABASE_HOST')
-    elif cmd_args.database_host:
-        database_conf['DATABASE_HOST'] = cmd_args.database_host
-    if 'DATABASE_PORT' in os.environ:
-        database_conf['DATABASE_PORT'] = os.environ.get('DATABASE_PORT')
-    elif cmd_args.database_port:
-        database_conf['DATABASE_PORT'] = cmd_args.database_port
-    if 'DATABASE_DB' in os.environ:
-        database_conf['DATABASE_DB'] = os.environ.get('DATABASE_DB')
-    elif cmd_args.database:
-        database_conf['DATABASE_DB'] = cmd_args.database
-    if 'DATABASE_USER' in os.environ:
-        database_conf['DATABASE_USER'] = os.environ.get('DATABASE_USER')
-    elif cmd_args.database_user:
-        database_conf['DATABASE_USER'] = cmd_args.database_user
-    if 'DATABASE_PASSWORD' in os.environ:
-        database_conf['DATABASE_PASSWORD'] = os.environ.get('DATABASE_PASSWORD')
-    elif cmd_args.database_password:
-        database_conf['DATABASE_PASSWORD'] = cmd_args.database_password
+    if 'DATABASE_URL' in os.environ:
+        database_url = os.environ.get('DATABASE_URL')
+    elif cmd_args.database_url:
+        database_url = cmd_args.database_url
 
-    debug_output = 'Database configuration:\n'
-    debug_output += '\tDatabasehost: {}\n'
-    debug_output += '\tDatabaseport: {}\n'
-    debug_output += '\tDatabase: {}\n'
-    debug_output += '\tDatabaseuser: {}\n'
-    debug_output += '\tDatabase password: {}'
-    logger.debug(debug_output.format(
-            database_conf['DATABASE_HOST'],
-            database_conf['DATABASE_PORT'],
-            database_conf['DATABASE_DB'],
-            database_conf['DATABASE_USER'],
-            database_conf['DATABASE_PASSWORD']
-            ))
-    return database_conf
+    logger.debug('Database URL: {}\n'.format(database_url))
+    return database_url
 
 
 def get_retry_session(akamai_credentials, logger, retries=3, backoff_factor=0.03):
@@ -330,7 +285,7 @@ def get_retry_session(akamai_credentials, logger, retries=3, backoff_factor=0.03
         akamai_session.mount('https://', adapter)
 
         return akamai_session
-    except:
+    except Exception as exc:
         logger.error('Cannot authenticate against Akamai API')
         logger.debug('', sys_exc=True)
         sys.exit(127)
@@ -457,7 +412,7 @@ def main():
         configuration = get_configuration(logger=logger)
 
     # Getting credentials to connect to database and akamai api
-    database_creds = get_database_creds(cmd_args=cmd_args, database_config=configuration, logger=logger)
+    database_url = get_database_url(cmd_args=cmd_args, database_config=configuration, logger=logger)
     akamai_creds = get_akamai_credentials(cmd_args=cmd_args, akamai_api_config=configuration, logger=logger)
     api_url = akamai_creds['AKAMAI_API_URL']
 
@@ -466,14 +421,8 @@ def main():
 
     # Open SQL Connection to database
     try:
-        sql_con = pymysql.connect(
-            host=database_creds['DATABASE_HOST'],
-            port=database_creds['DATABASE_PORT'],
-            db=database_creds['DATABASE_DB'],
-            user=database_creds['DATABASE_USER'],
-            password=database_creds['DATABASE_PASSWORD']
-        )
-    except pymysql.DatabaseError as e:
+        db = dataset.connect(database_url)
+    except dataset. as e:
         logger.error('DB errno({})'.format(e.args[0]))
         logger.debug('', exc_info=True)
         sys.exit(127)

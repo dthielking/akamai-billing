@@ -1,3 +1,4 @@
 requests
 edgegrid-python
-pymysql
+#pymysql
+dataset
